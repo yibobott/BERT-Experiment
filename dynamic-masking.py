@@ -11,11 +11,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 from datasets import DatasetDict
+from datetime import datetime
 
 """
 Config
 """
-RESULT_DIR = "./result/dynamic"
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+RESULT_DIR = "./result-" + timestamp + "/dynamic"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 # bert-base-uncased: the original BERT-base model

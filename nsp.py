@@ -11,11 +11,13 @@ import random
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from datetime import datetime
 
 """
 Config
 """
-RESULT_DIR = "./result-nsp"
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+RESULT_DIR = "./result-nsp-" + timestamp
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 MODEL_NAME = "bert-base-uncased"

@@ -12,11 +12,12 @@ import torch
 import random
 import os
 from datasets import DatasetDict
-
+from datetime import datetime
 """
 Config
 """
-RESULT_DIR = "./result/static"
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+RESULT_DIR = "./result-" + timestamp + "/static"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 # bert-base-uncased: the original BERT-base model
