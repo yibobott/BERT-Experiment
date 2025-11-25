@@ -232,7 +232,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
     )
 
     # 2) tokenize
-    tokenized = dataset.map(tokenize_pair, batched=True)
+    tokenized = dataset.map(tokenize_pair, batched=True, num_proc=12, batch_size=4000)
     tokenized = tokenized.remove_columns(["sentence_a", "sentence_b"])
 
     # 3) static masking
