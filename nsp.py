@@ -40,24 +40,24 @@ SEEDS = [42, 43, 44]
 
 
 def load_wikitext_pairs(train_sample_size=None, seed=42):
-    """
-    从 wikitext-103-raw-v1 构造 NSP 训练/验证对:
-    - 正样本: (sent[i], sent[i+1]), label=0
-    - 负样本: (sent[i], sent[j]), j 随机且 != i+1, label=1
+    """Construct NSP training/validation sentence pairs from wikitext-103-raw-v1.
 
-    注意：使用 seed 固定 random 以便多次实验可复现。
+    - Positive examples: (sent[i], sent[i + 1]), label = 0
+    - Negative examples: (sent[i], sent[j]), where j is random and j != i + 1, label = 1
+
+    Note: use the given seed to fix Python's random state for reproducibility.
     """
     random.seed(seed)
     original = load_dataset(*DATASET_NAME)
 
     def collect_sentences(split):
-        # 过滤空行 / 只包含空白字符的行
+        # Filter out empty lines or lines that contain only whitespace
         return [t for t in original[split]["text"] if t and t.strip()]
 
     train_sents = collect_sentences("train")
     valid_sents = collect_sentences("validation")
 
-    # 为了效率，只取前 train_sample_size+1 个构造 pair
+    # For efficiency, optionally keep only the first train_sample_size + 1 sentences to build pairs
     if train_sample_size is not None:
         train_sents = train_sents[: train_sample_size + 1]
 
@@ -66,16 +66,16 @@ def load_wikitext_pairs(train_sample_size=None, seed=42):
         n = len(sent_list)
 
         for i in range(n - 1):
-            # 50% 正样本: 下一句
+            # 50% positive examples: the next sentence
             if random.random() < 0.5:
                 a = sent_list[i]
                 b = sent_list[i + 1]
                 label = 0  # is_next
             else:
-                # 50% 负样本: 随机句子
+                # 50% negative examples: a random sentence
                 a = sent_list[i]
                 j = random.randint(0, n - 1)
-                # 避免刚好选到下一句
+                # Avoid accidentally sampling the true next sentence
                 if j == i + 1:
                     j = (j + 1) % n
                 b = sent_list[j]
@@ -97,7 +97,7 @@ def load_wikitext_pairs(train_sample_size=None, seed=42):
         )
 
     train_pairs = make_nsp_pairs(train_sents)
-    valid_pairs = make_nsp_pairs(valid_sents, max_pairs=VALID_SAMPLE_SIZE)  # 验证集不用太大
+    valid_pairs = make_nsp_pairs(valid_sents, max_pairs=VALID_SAMPLE_SIZE)  # Validation set does not need to be very large
 
     dataset = DatasetDict({"train": train_pairs, "validation": valid_pairs})
     return dataset
@@ -108,10 +108,7 @@ tokenizer = BertTokenizerFast.from_pretrained(MODEL_NAME)
 
 
 def tokenize_pair(examples):
-    """
-    把 (sentence_a, sentence_b) 编码成:
-    input_ids, token_type_ids, attention_mask
-    """
+    """Encode (sentence_a, sentence_b) into input_ids, token_type_ids and attention_mask."""
     return tokenizer(
         examples["sentence_a"],
         examples["sentence_b"],
@@ -122,22 +119,21 @@ def tokenize_pair(examples):
 
 
 def static_masking(example, mlm_prob=0.15):
-    """
-    Static Masking for BERT NSP setting:
+    """Static masking for the BERT NSP setting.
 
-    - 对 input_ids 做 BERT-style MLM:
-      * 从非 special token 中，以 0.15 概率选 mask 位置
-      * 80% -> [MASK]
-      * 10% -> random token
-      * 10% -> 保持原样
-    - labels 只在 mask 的位置保留原 token id，其余设为 -100
+    - Apply BERT-style MLM on input_ids:
+      * Among non-special tokens, select positions with probability 0.15
+      * 80% -> replace with [MASK]
+      * 10% -> replace with a random token
+      * 10% -> keep the original token
+    - In labels, keep the original token id only at masked positions; set all other positions to -100.
     """
     input_ids = torch.tensor(example["input_ids"])
     labels = input_ids.clone()
 
     special_ids = set(tokenizer.all_special_ids)
 
-    # 候选 mask 位置: 非 special token
+    # Candidate mask positions: non-special tokens only
     cand_positions = [
         i for i, tok_id in enumerate(input_ids)
         if int(tok_id) not in special_ids
@@ -148,23 +144,23 @@ def static_masking(example, mlm_prob=0.15):
         example["labels"] = labels.tolist()
         return example
 
-    # 15% 概率采样 mask 位置
+    # Sample mask positions with probability mlm_prob (default 0.15)
     mask_positions = [
         i for i in cand_positions if random.random() < mlm_prob
     ]
 
-    # 如果一个都没采到，强制选一个，避免 loss=0
+    # If none are selected, force-mask one position to avoid degenerate loss = 0
     if len(mask_positions) == 0:
         mask_positions = [random.choice(cand_positions)]
 
     mask_positions = torch.tensor(mask_positions, dtype=torch.long)
     rand = torch.rand(len(mask_positions))
 
-    # 80% -> [MASK]
+    # 80% -> replace with [MASK]
     mask80 = rand < 0.8
     input_ids[mask_positions[mask80]] = tokenizer.mask_token_id
 
-    # 10% -> random token
+    # 10% -> replace with a random token
     mask10 = (rand >= 0.8) & (rand < 0.9)
     random_tokens = torch.randint(
         low=0,
@@ -173,9 +169,9 @@ def static_masking(example, mlm_prob=0.15):
     )
     input_ids[mask_positions[mask10]] = random_tokens
 
-    # 10% -> 保持原样（不改 input_ids）
+    # 10% -> keep unchanged (do not modify input_ids)
 
-    # labels: 只在 mask 的位置参与 MLM loss
+    # labels: only masked positions participate in the MLM loss
     labels[:] = -100
     orig_ids = torch.tensor(example["input_ids"])
     labels[mask_positions] = orig_ids[mask_positions]
@@ -190,7 +186,7 @@ class LossRecorder(TrainerCallback):
         self.logs = []
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        # 训练时的 loss
+        # Training loss
         if logs is not None and "loss" in logs:
             self.logs.append(
                 {
@@ -201,7 +197,7 @@ class LossRecorder(TrainerCallback):
             )
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        # eval 的 loss
+        # Evaluation loss
         if metrics is not None and "eval_loss" in metrics:
             self.logs.append(
                 {
@@ -216,30 +212,28 @@ class LossRecorder(TrainerCallback):
 
 
 def run_for_seed(seed: int) -> pd.DataFrame:
-    """
-    Run training for a single seed
-    """
+    """Run training for a single random seed."""
     print(f"\n========== START: Running NSP baseline with SEED = {seed} ==========\n")
 
-    # 随机种子
+    # Random seeds
     random.seed(seed)
     torch.manual_seed(seed)
 
-    # 1) 构造 NSP 数据
+    # 1) Construct NSP dataset
     dataset = load_wikitext_pairs(
         train_sample_size=TRAIN_SAMPLE_SIZE,
         seed=seed,
     )
 
-    # 2) tokenize
+    # 2) Tokenize sentence pairs
     tokenized = dataset.map(tokenize_pair, batched=True)
     # tokenized = dataset.map(tokenize_pair, batched=True, num_proc=12, batch_size=4000)
     tokenized = tokenized.remove_columns(["sentence_a", "sentence_b"])
 
-    # 3) static masking
+    # 3) Apply static masking (MLM)
     tokenized_static = tokenized.map(static_masking)
 
-    # 4) TrainingArguments
+    # 4) Set up TrainingArguments
     args = TrainingArguments(
         output_dir=f"{RESULT_DIR}/bert_nsp_seed_{seed}",
 
@@ -263,7 +257,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
         seed=seed,
     )
 
-    # 5) 模型 + Trainer
+    # 5) Model + Trainer
     model = BertForPreTraining.from_pretrained(MODEL_NAME)
     loss_recorder = LossRecorder()
 
@@ -279,7 +273,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
 
     df = loss_recorder.to_dataframe()
     df["seed"] = seed
-    # 每个 seed 单独存一份
+    # Save a separate CSV for each seed
     per_seed_csv = os.path.join(RESULT_DIR, f"nsp_baseline_loss_seed{seed}.csv")
     df.to_csv(per_seed_csv, index=False)
     print(f"Saved per-seed loss to: {per_seed_csv}")
@@ -288,15 +282,13 @@ def run_for_seed(seed: int) -> pd.DataFrame:
     return df
 
 
-# ========== 6. 多 seed 循环 & 合并结果 ==========
-
 def plot_static_loss(all_losses: pd.DataFrame):
-    """
-    collums in all_losses:
-      - step
-      - loss
-      - type ('train' / 'eval')
-      - seed
+    """Columns in all_losses:
+
+    - step
+    - loss
+    - type ('train' / 'eval')
+    - seed
     """
 
     # plot train loss
