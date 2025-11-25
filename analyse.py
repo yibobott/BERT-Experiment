@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind
 
-RESULT_DIR = "./result-1"
-BASELINE = "static"
-IMPROVE = "dynamic"
+RESULT_DIR = "./result-nsp-1"
+BASELINE = "nsp_baseline"
+IMPROVE = "nsp_improve"
 BASELINE_CSV = RESULT_DIR + "/" + BASELINE + "/" + BASELINE + "_loss_all_seeds.csv"
 IMPROVE_CSV = RESULT_DIR + "/" + IMPROVE + "/" + IMPROVE + "_loss_all_seeds.csv"
 
@@ -181,7 +181,7 @@ def main():
     if improve_eval_std > baseline_eval_std:
         print("→" + IMPROVE + " masking is less stable (higher variance), as expected.")
     else:
-        print("→" + BASELINE + " masking is equally/more stable in this setup.")
+        print("→" + IMPROVE + " masking is equally/more stable in this setup.")
 
 if __name__ == "__main__":
     main()
