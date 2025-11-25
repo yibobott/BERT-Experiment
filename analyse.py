@@ -3,9 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind
 
-RESULT_DIR = "./result"
-STATIC_CSV = RESULT_DIR + "/static/" + "static_loss_all_seeds.csv"
-DYNAMIC_CSV = RESULT_DIR + "/dynamic/" + "dynamic_loss_all_seeds.csv"
+RESULT_DIR = "./result-1"
+BASELINE = "static"
+IMPROVE = "dynamic"
+BASELINE_CSV = RESULT_DIR + "/" + BASELINE + "/" + BASELINE + "_loss_all_seeds.csv"
+IMPROVE_CSV = RESULT_DIR + "/" + IMPROVE + "/" + IMPROVE + "_loss_all_seeds.csv"
 
 def load_losses(path):
     df = pd.read_csv(path)
@@ -64,13 +66,13 @@ def plot_mean_std(mean, std, label, title, save_path):
     plt.savefig(save_path)
     plt.close()
 
-def plot_compare(static_mean, static_std, dynamic_mean, dynamic_std, title, save_path):
+def plot_compare(baseline_mean, baseline_std, improve_mean, improve_std, title, save_path):
     plt.figure(figsize=(8,5))
-    plt.plot(static_mean.index, static_mean.values, label="Static mean")
-    plt.fill_between(static_mean.index, static_mean-static_std, static_mean+static_std, alpha=0.2)
+    plt.plot(baseline_mean.index, baseline_mean.values, label= BASELINE + " mean")
+    plt.fill_between(baseline_mean.index, baseline_mean-baseline_std, baseline_mean+baseline_std, alpha=0.2)
 
-    plt.plot(dynamic_mean.index, dynamic_mean.values, label="Dynamic mean")
-    plt.fill_between(dynamic_mean.index, dynamic_mean-dynamic_std, dynamic_mean+dynamic_std, alpha=0.2)
+    plt.plot(improve_mean.index, improve_mean.values, label= IMPROVE + " mean")
+    plt.fill_between(improve_mean.index, improve_mean-improve_std, improve_mean+improve_std, alpha=0.2)
 
     plt.xlabel("Step")
     plt.ylabel("Loss")
@@ -82,34 +84,34 @@ def plot_compare(static_mean, static_std, dynamic_mean, dynamic_std, title, save
     plt.close()
 
 def main():
-    static_df = load_losses(STATIC_CSV)
-    dynamic_df = load_losses(DYNAMIC_CSV)
+    baseline_df = load_losses(BASELINE_CSV)
+    improve_df = load_losses(IMPROVE_CSV)
 
     print("\n==============================")
     print("1) Final Eval Loss (per seed)")
     print("==============================")
-    s_eval_per_seed, s_eval_mean, s_eval_std = summarize_final_eval(static_df)
-    d_eval_per_seed, d_eval_mean, d_eval_std = summarize_final_eval(dynamic_df)
+    baseline_eval_per_seed, baseline_eval_mean, baseline_eval_std = summarize_final_eval(baseline_df)
+    improve_eval_per_seed, improve_eval_mean, improve_eval_std = summarize_final_eval(improve_df)
 
-    print("\nStatic final eval per seed:")
-    print(s_eval_per_seed.to_string(index=False))
-    print(f"Static final eval mean±std: {s_eval_mean:.4f} ± {s_eval_std:.4f}")
+    print("\n" + BASELINE + " final eval per seed:")
+    print(baseline_eval_per_seed.to_string(index=False))
+    print(f"{BASELINE} final eval mean±std: {baseline_eval_mean:.4f} ± {baseline_eval_std:.4f}")
 
-    print("\nDynamic final eval per seed:")
-    print(d_eval_per_seed.to_string(index=False))
-    print(f"Dynamic final eval mean±std: {d_eval_mean:.4f} ± {d_eval_std:.4f}")
+    print("\n" + IMPROVE + " final eval per seed:")
+    print(improve_eval_per_seed.to_string(index=False))
+    print(f"{IMPROVE} final eval mean±std: {improve_eval_mean:.4f} ± {improve_eval_std:.4f}")
 
-    diff = d_eval_mean - s_eval_mean
-    print(f"\nMean difference (Dynamic - Static): {diff:.4f}")
+    diff = improve_eval_mean - baseline_eval_mean
+    print(f"\nMean difference ({IMPROVE} - {BASELINE}): {diff:.4f}")
     if diff > 0:
-        print("→ Static is slightly better (lower eval loss) in this setup.")
+        print("→" + BASELINE + " is slightly better (lower eval loss) in this setup.")
     else:
-        print("→ Dynamic is slightly better (lower eval loss) in this setup.")
+        print("→" + IMPROVE + " is slightly better (lower eval loss) in this setup.")
 
     # simple t-test on final eval losses (small n, just for reference)
     t_stat, p_val = ttest_ind(
-        d_eval_per_seed["loss"].values,
-        s_eval_per_seed["loss"].values,
+        improve_eval_per_seed["loss"].values,
+        baseline_eval_per_seed["loss"].values,
         equal_var=False
     )
     print(f"\nT-test on final eval losses: t={t_stat:.3f}, p={p_val:.3f}")
@@ -118,68 +120,68 @@ def main():
     print("\n==============================")
     print("2) Final Train Loss (per seed)")
     print("==============================")
-    s_train_per_seed, s_train_mean, s_train_std = summarize_final_train(static_df)
-    d_train_per_seed, d_train_mean, d_train_std = summarize_final_train(dynamic_df)
+    baseline_train_per_seed, baseline_train_mean, baseline_train_std = summarize_final_train(baseline_df)
+    improve_train_per_seed, improve_train_mean, improve_train_std = summarize_final_train(improve_df)
 
-    print("\nStatic final train per seed:")
-    print(s_train_per_seed.to_string(index=False))
-    print(f"Static final train mean±std: {s_train_mean:.4f} ± {s_train_std:.4f}")
+    print("\n" + BASELINE + " final train per seed:")
+    print(baseline_train_per_seed.to_string(index=False))
+    print(f"{BASELINE} final train mean±std: {baseline_train_mean:.4f} ± {baseline_train_std:.4f}")
 
-    print("\nDynamic final train per seed:")
-    print(d_train_per_seed.to_string(index=False))
-    print(f"Dynamic final train mean±std: {d_train_mean:.4f} ± {d_train_std:.4f}")
+    print("\n" + IMPROVE + " final train per seed:")
+    print(improve_train_per_seed.to_string(index=False))
+    print(f"{IMPROVE} final train mean±std: {improve_train_mean:.4f} ± {improve_train_std:.4f}")
 
     print("\n==============================")
     print("3) Curve Mean±Std + Plots")
     print("==============================")
 
     # eval curves
-    s_eval_curve_mean, s_eval_curve_std = curve_mean_std(static_df, "eval")
-    d_eval_curve_mean, d_eval_curve_std = curve_mean_std(dynamic_df, "eval")
+    baseline_eval_curve_mean, baseline_eval_curve_std = curve_mean_std(baseline_df, "eval")
+    improve_eval_curve_mean, improve_eval_curve_std = curve_mean_std(improve_df, "eval")
 
-    plot_mean_std(s_eval_curve_mean, s_eval_curve_std,
-                  "Static eval", "Static Eval Loss (mean±std)",
-                  RESULT_DIR + "/static_eval_mean_std.png")
-    plot_mean_std(d_eval_curve_mean, d_eval_curve_std,
-                  "Dynamic eval", "Dynamic Eval Loss (mean±std)",
-                  RESULT_DIR + "/dynamic_eval_mean_std.png")
-    plot_compare(s_eval_curve_mean, s_eval_curve_std,
-                 d_eval_curve_mean, d_eval_curve_std,
-                 "Static vs Dynamic Eval Loss (mean±std)",
-                 RESULT_DIR + "/compare_eval_mean_std.png")
+    plot_mean_std(baseline_eval_curve_mean, baseline_eval_curve_std,
+                  BASELINE + " eval", BASELINE + " Eval Loss (mean±std)",
+                  RESULT_DIR + "/" + BASELINE + "_eval_mean_std.png")
+    plot_mean_std(improve_eval_curve_mean, improve_eval_curve_std,
+                  IMPROVE + " eval", IMPROVE + " Eval Loss (mean±std)",
+                  RESULT_DIR + "/" + IMPROVE + "_eval_mean_std.png")
+    plot_compare(baseline_eval_curve_mean, baseline_eval_curve_std,
+                 improve_eval_curve_mean, improve_eval_curve_std,
+                 BASELINE + " vs " + IMPROVE + " Eval Loss (mean±std)",
+                 RESULT_DIR + "/" + BASELINE + "_vs_" + IMPROVE + "_compare_eval_mean_std.png")
 
     # train curves
-    s_train_curve_mean, s_train_curve_std = curve_mean_std(static_df, "train")
-    d_train_curve_mean, d_train_curve_std = curve_mean_std(dynamic_df, "train")
+    baseline_train_curve_mean, baseline_train_curve_std = curve_mean_std(baseline_df, "train")
+    improve_train_curve_mean, improve_train_curve_std = curve_mean_std(improve_df, "train")
 
-    plot_mean_std(s_train_curve_mean, s_train_curve_std,
-                  "Static train", "Static Train Loss (mean±std)",
-                  RESULT_DIR + "/static_train_mean_std.png")
-    plot_mean_std(d_train_curve_mean, d_train_curve_std,
-                  "Dynamic train", "Dynamic Train Loss (mean±std)",
-                  RESULT_DIR + "/dynamic_train_mean_std.png")
-    plot_compare(s_train_curve_mean, s_train_curve_std,
-                 d_train_curve_mean, d_train_curve_std,
-                 "Static vs Dynamic Train Loss (mean±std)",
-                 RESULT_DIR + "/compare_train_mean_std.png")
+    plot_mean_std(baseline_train_curve_mean, baseline_train_curve_std,
+                  BASELINE + " train", BASELINE + " Train Loss (mean±std)",
+                  RESULT_DIR + "/" + BASELINE + "_train_mean_std.png")
+    plot_mean_std(improve_train_curve_mean, improve_train_curve_std,
+                  IMPROVE + " train", IMPROVE + " Train Loss (mean±std)",
+                  RESULT_DIR + "/" + IMPROVE + "_train_mean_std.png")
+    plot_compare(baseline_train_curve_mean, baseline_train_curve_std,
+                 improve_train_curve_mean, improve_train_curve_std,
+                 BASELINE + " vs " + IMPROVE + " Train Loss (mean±std)",
+                 RESULT_DIR + "/" + BASELINE + "_vs_" + IMPROVE + "_compare_train_mean_std.png")
 
     print("Saved plots to " + RESULT_DIR + "/")
-    print("- static_eval_mean_std.png")
-    print("- dynamic_eval_mean_std.png")
-    print("- compare_eval_mean_std.png")
-    print("- static_train_mean_std.png")
-    print("- dynamic_train_mean_std.png")
-    print("- compare_train_mean_std.png")
+    print("- " + BASELINE + "_eval_mean_std.png")
+    print("- " + IMPROVE + "_eval_mean_std.png")
+    print("- " + BASELINE + "_vs_" + IMPROVE + "_compare_eval_mean_std.png")
+    print("- " + BASELINE + "_train_mean_std.png")
+    print("- " + IMPROVE + "_train_mean_std.png")
+    print("- " + BASELINE + "_vs_" + IMPROVE + "_compare_train_mean_std.png")
 
     print("\n==============================")
     print("4) Stability / Variance summary")
     print("==============================")
-    print(f"Eval std (static):  {s_eval_std:.4f}")
-    print(f"Eval std (dynamic): {d_eval_std:.4f}")
-    if d_eval_std > s_eval_std:
-        print("→ Dynamic masking is less stable (higher variance), as expected.")
+    print(f"Eval std ({BASELINE}):  {baseline_eval_std:.4f}")
+    print(f"Eval std ({IMPROVE}): {improve_eval_std:.4f}")
+    if improve_eval_std > baseline_eval_std:
+        print("→" + IMPROVE + " masking is less stable (higher variance), as expected.")
     else:
-        print("→ Dynamic masking is equally/more stable in this setup.")
+        print("→" + BASELINE + " masking is equally/more stable in this setup.")
 
 if __name__ == "__main__":
     main()
