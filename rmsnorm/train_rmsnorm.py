@@ -21,8 +21,8 @@ Config
 """
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-# NORM_TYPE = "rmsnorm"
-NORM_TYPE = "postln"
+NORM_TYPE = "rmsnorm"
+# NORM_TYPE = "postln"
 
 # MASKING_TYPE = "static"
 MASKING_TYPE = "dynamic"
@@ -30,12 +30,12 @@ MASKING_TYPE = "dynamic"
 RESULT_DIR = f"./result-rmsnorm-{timestamp}-{NORM_TYPE}-{MASKING_TYPE}"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-# MODEL_NAME = "bert-base-uncased"
-MODEL_NAME = "prajjwal1/bert-small"
+MODEL_NAME = "bert-base-uncased"
+# MODEL_NAME = "prajjwal1/bert-small"
 
 DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
-# TRAIN_SAMPLE_SIZE = None
-TRAIN_SAMPLE_SIZE = 100000
+TRAIN_SAMPLE_SIZE = None
+# TRAIN_SAMPLE_SIZE = 100000
 MAX_LENGTH = 64
 
 BATCH_SIZE = 8
