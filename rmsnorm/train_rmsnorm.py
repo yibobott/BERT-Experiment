@@ -21,8 +21,8 @@ Config
 """
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-NORM_TYPE = "rmsnorm"
-# NORM_TYPE = "postln"
+# NORM_TYPE = "rmsnorm"
+NORM_TYPE = "postln"
 
 # MASKING_TYPE = "static"
 MASKING_TYPE = "dynamic"
