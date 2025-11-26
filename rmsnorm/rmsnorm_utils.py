@@ -6,7 +6,8 @@ class RMSNorm(nn.Module):
     """
     RMSNorm: Root Mean Square Layer Normalization
     https://arxiv.org/abs/1910.07467
-    实现非常简单，只根据每个 token 的 L2 均值归一化，然后乘以一个可学习的缩放参数。
+    A simple normalization scheme: normalize by the L2 root-mean-square of each
+    token and then apply a learnable scaling parameter.
     """
     def __init__(self, dim: int, eps: float = 1e-8):
         super().__init__()
@@ -15,20 +16,22 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (..., dim)
-        # 计算均方根 (RMS): sqrt(mean(x^2))
+        # Compute root mean square (RMS): sqrt(mean(x^2)) along the last dim
         rms = x.pow(2).mean(dim=-1, keepdim=True).sqrt()
         x_norm = x / (rms + self.eps)
         return self.weight * x_norm
 
 def convert_layernorm_to_rmsnorm(module: nn.Module, prefix: str = "") -> nn.Module:
     """
-    递归地将模型中的所有 nn.LayerNorm 替换为 RMSNorm。
-    注意：只会根据原 LayerNorm 的 normalized_shape[0] 来构造 RMSNorm。
+    Recursively replace all nn.LayerNorm modules in `module` with RMSNorm.
+
+    Note: the RMSNorm dimension is taken from the original LayerNorm's
+    `normalized_shape[0]`.
     """
     for name, child in list(module.named_children()):
         child_prefix = f"{prefix}.{name}" if prefix else name
         if isinstance(child, nn.LayerNorm):
-            # child.normalized_shape 是一个 tuple，比如 (768,)            
+            # child.normalized_shape is a tuple, e.g. (768,)
             dim = child.normalized_shape[0]
             print(f"[RMSNorm] Replacing LayerNorm at: {child_prefix} (dim={dim})")
             setattr(module, name, RMSNorm(dim, eps=child.eps))

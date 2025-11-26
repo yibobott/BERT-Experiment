@@ -76,9 +76,10 @@ def tokenize_fn(examples):
 
 
 def static_masking(example, mlm_prob=0.15):
-    """
-    和你之前 static-masking.py 中的逻辑一致：
-    做一次性静态掩码，并只在被 mask 的位置上计算 loss。
+    """One-shot static masking, same logic as in static-masking.py.
+
+    Perform static masking once during dataset construction, and compute MLM
+    loss only on the masked positions.
     """
     input_ids = torch.tensor(example["input_ids"])
     labels = input_ids.clone()
@@ -171,10 +172,14 @@ def get_training_args(output_dir, seed):
 
 
 def build_model(norm_type: str):
-    """
-    norm_type: "postln" -> 标准 BertForMaskedLM
-               "rmsnorm" -> 替换所有 LayerNorm 为 RMSNorm
-    注意：这里都是从 config 初始化（不加载预训练权重），保证结构公平对比。
+    """Build a BERT-MLM model under different normalization schemes.
+
+    norm_type:
+        "postln"  -> standard BertForMaskedLM (Post-LayerNorm)
+        "rmsnorm" -> BertForMaskedLM with all LayerNorm replaced by RMSNorm
+
+    Note: both variants are initialized from a BertConfig (no pretrained
+    checkpoint) to ensure a fair comparison of architectures.
     """
     from transformers import BertConfig
     config = BertConfig.from_pretrained(MODEL_NAME)
@@ -198,25 +203,25 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    # 如果你使用 CUDA
+    # If CUDA is available
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    # 如果你使用 MPS
+    # If you are using MPS (Apple Silicon)
     if torch.backends.mps.is_available():
         torch.mps.manual_seed(seed)
 
-    # 为了更确定性（可选）
+    # For more deterministic behavior in CuDNN (optional)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
 def main():
-    # 准备数据
+    # Prepare datasets
     if MASKING_TYPE == "static":
         dataset = prepare_static_dataset()
         train_ds = dataset["train"]
         eval_ds = dataset["validation"]
-        data_collator = None  # 已经在 dataset 中构造好了 labels
+        data_collator = None  # labels have already been constructed in the dataset
     else:
         dataset = prepare_dynamic_dataset()
         train_ds = dataset["train"]

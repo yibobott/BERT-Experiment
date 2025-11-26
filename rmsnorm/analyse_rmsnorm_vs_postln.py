@@ -5,14 +5,15 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 
-plt.switch_backend("Agg")  # 避免某些环境下无显示错误
+# Use a non-interactive backend to avoid display errors in headless environments
+plt.switch_backend("Agg")
 
-# 手动填入你保存结果的目录（对应不同时间跑的实验）
-OUTPUT_DIR = "./result-rmsnorm-3"
+# Manually specify the directories for different experimental runs
+OUTPUT_DIR = "./result-rmsnorm-4"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-POSTLN_DIR = "result-rmsnorm-20251126-152638-postln-dynamic"
-RMSNORM_DIR = "result-rmsnorm-20251126-145941-rmsnorm-dynamic"
+POSTLN_DIR = "result-rmsnorm-20251126-165922-postln-dynamic"
+RMSNORM_DIR = "result-rmsnorm-20251126-161222-rmsnorm-dynamic"
 MASKING_TYPE = "dynamic"
 
 postln_csv = f"{OUTPUT_DIR}/{POSTLN_DIR}/postln_{MASKING_TYPE}_loss_all_seeds.csv"
@@ -31,8 +32,8 @@ def load_losses(path):
 
 def _summarize_final_by_type(df: pd.DataFrame, loss_type: str):
     """
-    通用：返回某种 loss_type ('eval' / 'train') 的
-    per-seed 最后一个 loss 的表 + mean + std
+    Generic helper: return, for a given loss_type ('eval' / 'train'),
+    the per-seed final loss table together with mean and std.
     """
     sub = df[df["type"] == loss_type].copy()
     last = sub.sort_values("step").groupby("seed").tail(1)
@@ -74,7 +75,7 @@ def plot_eval_curves(df, title, out_png):
 
 
 def plot_train_curves(df, title, out_png):
-    """画每个 seed 的 train loss 曲线。"""
+    """Plot per-seed train loss curves."""
     _plot_loss_curves_by_type(df, loss_type="train", title=title, out_png=out_png, ylabel="Train loss")
 
 
@@ -108,7 +109,7 @@ def plot_mean_std(df, title, out_png):
 
 
 def plot_compare_mean_std(df1, df2, title, out_png):
-    # 计算 df1 的 mean / std
+    # Compute mean / std for df1
     eval_df1 = df1[df1["type"] == "eval"].copy()
     grouped1 = eval_df1.groupby("step")
     steps1 = sorted(grouped1.groups.keys())
@@ -122,7 +123,7 @@ def plot_compare_mean_std(df1, df2, title, out_png):
     means1 = np.array(means1)
     stds1 = np.array(stds1)
 
-    # 计算 df2 的 mean / std
+    # Compute mean / std for df2
     eval_df2 = df2[df2["type"] == "eval"].copy()
     grouped2 = eval_df2.groupby("step")
     steps2 = sorted(grouped2.groups.keys())
@@ -196,7 +197,7 @@ def plot_eval_diff(postln_df, rms_df, out_png):
 
 
 def main():
-    # 1) 加载两种配置的日志
+    # 1) Load logs for the two configurations
     postln_df = load_losses(postln_csv)
     rms_df = load_losses(rmsnorm_csv)
 
@@ -239,7 +240,8 @@ def main():
     print("3) Curve Mean±Std + Plots")
     print("==============================")
 
-    # 3) 画曲线，对比不同 seed 的 eval loss / train loss 曲线是否更“靠近”
+    # 3) Plot curves to compare whether per-seed eval/train loss trajectories
+    #    are closer across different seeds
 
     # eval curves
     plot_eval_curves(
@@ -253,13 +255,13 @@ def main():
     )
     plot_train_curves(rms_df, "RMSNorm: Train Loss (per seed)", "rmsnorm_train_curves_per_seed.png")
 
-    # 4) 画 mean±std 曲线
+    # 4) Plot mean±std curves for eval loss
     plot_mean_std(
         postln_df, "Post-LN: Eval Loss (mean±std)", "postln_eval_mean_std.png"
     )
     plot_mean_std(rms_df, "RMSNorm: Eval Loss (mean±std)", "rmsnorm_eval_mean_std.png")
 
-    # 5) 对比 mean±std 曲线
+    # 5) Plot comparison of eval mean±std curves
     plot_compare_mean_std(
         postln_df,
         rms_df,
@@ -267,7 +269,7 @@ def main():
         "postln_vs_rmsnorm_eval_mean_std.png",
     )
 
-    # 6) 画 eval loss 差值曲线
+    # 6) Plot eval loss difference curve (RMSNorm - Post-LN)
     plot_eval_diff(postln_df, rms_df, "eval_loss_diff_rmsnorm_minus_postln.png")
 
     print("\n==============================")
