@@ -14,4 +14,8 @@ python nsp.py
 # analyse 
 python analyse.py
 
+# replace LayerNorm with RMSNorm
+python -m rmsnorm.train_rmsnorm
+
+
 ```
