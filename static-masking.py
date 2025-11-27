@@ -20,16 +20,22 @@ timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 RESULT_DIR = "./result-" + timestamp + "/static"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-# bert-base-uncased: the original BERT-base model
-# prajjwal1/bert-small: a smaller version of BERT-base (6 layers)
 # MODEL_NAME = "prajjwal1/bert-small"
 MODEL_NAME = "bert-base-uncased"
-DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
-TRAIN_SAMPLE_SIZE = 100000  # 100k lines for MPS
+
+# DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
+# TRAIN_SAMPLE_SIZE = 100000 # 100k
+DATASET_NAME = ("openwebtext", )
+TRAIN_SAMPLE_SIZE = 1000000 # 1M
+
 MAX_LENGTH = 64
 
 BATCH_SIZE = 8
-MAX_STEPS = 3000
+# MAX_STEPS = 3000
+MAX_STEPS = 30000 # 3w
+# GRAD_ACC_STEPS = 1
+GRAD_ACC_STEPS = 4 
+
 LR = 5e-5
 WARMUP_STEPS = 100
 EVAL_STEPS = 100
@@ -45,15 +51,22 @@ def load_dataset_demo():
     """
     original_dataset = load_dataset(*DATASET_NAME)
 
-    # We only need a subset (e.g., 100k lines) for efficient experimentation on MPS
-    train = original_dataset["train"].shuffle(seed=42).select(range(TRAIN_SAMPLE_SIZE))
-    # train = original_dataset["train"]
+    train_full = original_dataset["train"].shuffle(seed=42)
+    if TRAIN_SAMPLE_SIZE is not None and TRAIN_SAMPLE_SIZE < len(train_full):
+        train = train_full.select(range(TRAIN_SAMPLE_SIZE))
+    else:
+        train = train_full
+
     # filter empty / whitespace-only lines
     train = train.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
     
-    # keep the validation set from WikiText-103
-    validation = original_dataset["validation"]
-    validation = validation.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
+    if DATASET_NAME == ("openwebtext", ):
+        split = train.train_test_split(test_size=0.01, seed=42)  # 1% 做 validation
+        train = split["train"]
+        validation = split["test"]
+    else:
+        validation = original_dataset["validation"]
+        validation = validation.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
 
     dataset = DatasetDict({
         "train": train,
@@ -164,6 +177,7 @@ def get_training_args(output_dir, seed):
 
         per_device_train_batch_size=BATCH_SIZE,
         per_device_eval_batch_size=BATCH_SIZE,
+        gradient_accumulation_steps=GRAD_ACC_STEPS,
 
         # —— 控制训练长度 ——
         max_steps=MAX_STEPS,
@@ -182,7 +196,7 @@ def get_training_args(output_dir, seed):
         save_strategy="no", 
 
         # —— 其他设置 ——
-        fp16=False,
+        fp16=True,
         report_to="none",
         seed=seed
     )
