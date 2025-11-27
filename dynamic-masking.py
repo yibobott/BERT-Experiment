@@ -23,17 +23,16 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 # MODEL_NAME = "prajjwal1/bert-small"
 MODEL_NAME = "bert-base-uncased"
 
-# DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
+DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
 # TRAIN_SAMPLE_SIZE = 100000 # 100k
-DATASET_NAME = ("openwebtext", )
-TRAIN_SAMPLE_SIZE = 1000000 # 1M
+TRAIN_SAMPLE_SIZE = None
 
 MAX_LENGTH = 64
 BATCH_SIZE = 8
 # MAX_STEPS = 3000
 MAX_STEPS = 30000 # 3w
-# GRAD_ACC_STEPS = 1
-GRAD_ACC_STEPS = 4 
+GRAD_ACC_STEPS = 1
+# GRAD_ACC_STEPS = 4 
 
 LR = 5e-5
 WARMUP_STEPS = 100
@@ -55,13 +54,8 @@ def load_dataset_demo():
     # filter empty / whitespace-only lines
     train = train.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
     
-    if DATASET_NAME == ("openwebtext", ):
-        split = train.train_test_split(test_size=0.01, seed=42)  # 1% 做 validation
-        train = split["train"]
-        validation = split["test"]
-    else:
-        validation = original_dataset["validation"]
-        validation = validation.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
+    validation = original_dataset["validation"]
+    validation = validation.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
 
     dataset = DatasetDict({
         "train": train,
