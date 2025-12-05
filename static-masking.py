@@ -3,7 +3,7 @@ from transformers import (
     BertTokenizerFast,
     BertForMaskedLM,
     Trainer,
-    TrainingArguments
+    TrainingArguments,
 )
 from transformers import TrainerCallback
 import matplotlib.pyplot as plt
@@ -12,49 +12,18 @@ import torch
 import random
 import os
 from datasets import DatasetDict
-from datetime import datetime
-"""
-Config
-"""
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-RESULT_DIR = "./result-" + timestamp + "/static"
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-# MODEL_NAME = "prajjwal1/bert-small"
-MODEL_NAME = "bert-base-uncased"
-
-DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
-# TRAIN_SAMPLE_SIZE = 100000 # 100k
-TRAIN_SAMPLE_SIZE = None
-
-MAX_LENGTH = 64
-BATCH_SIZE = 16
-# BATCH_SIZE = 8
-# MAX_STEPS = 3000
-MAX_STEPS = 50000 # 5w
-# GRAD_ACC_STEPS = 1
-GRAD_ACC_STEPS = 2 
-
-LR = 5e-5
-# WARMUP_STEPS = 100
-WARMUP_STEPS = 1000
-# EVAL_STEPS = 100
-EVAL_STEPS = 500
-# LOGGING_STEPS = 10
-LOGGING_STEPS = 50
-
-SEEDS = [42, 43, 44]
+from config import StaticMaskingConfig, load_static_config
 
 
-def load_dataset_demo():
+def preprocess_dataset(config: StaticMaskingConfig):
     """
     Load dataset once (fixed data across seeds)
     """
-    original_dataset = load_dataset(*DATASET_NAME)
+    original_dataset = load_dataset(*config.dataset_name)
 
     train_full = original_dataset["train"].shuffle(seed=42)
-    if TRAIN_SAMPLE_SIZE is not None and TRAIN_SAMPLE_SIZE < len(train_full):
-        train = train_full.select(range(TRAIN_SAMPLE_SIZE))
+    if config.train_sample_size is not None and config.train_sample_size < len(train_full):
+        train = train_full.select(range(config.train_sample_size))
     else:
         train = train_full
 
@@ -70,19 +39,17 @@ def load_dataset_demo():
     })
     return dataset
 
-# Tokenizer
-tokenizer = BertTokenizerFast.from_pretrained(MODEL_NAME)
 
-def tokenize_fn(examples):
+def tokenize_fn(examples, config: StaticMaskingConfig, tokenizer: BertTokenizerFast):
     return tokenizer(
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=MAX_LENGTH
+        max_length=config.max_length
     )
 
 
-def static_masking(example, mlm_prob=0.15):
+def static_masking(example, tokenizer: BertTokenizerFast, mlm_prob=0.15):
     """
     Static Masking for BERT-style MLM pretraining.
 
@@ -131,18 +98,18 @@ def static_masking(example, mlm_prob=0.15):
     # 4) Apply BERT 80/10/10 replacement strategy
     rand = torch.rand(len(mask_positions))
 
-    # (1) 80% -> replace with [MASK]
+    # 80% -> replace with [MASK]
     mask80 = rand < 0.8
     input_ids[mask_positions[mask80]] = tokenizer.mask_token_id
 
-    # (2) 10% -> replace with random token
+    # 10% -> replace with random token
     mask10 = (rand >= 0.8) & (rand < 0.9)
     random_tokens = torch.randint(
         low=0, high=tokenizer.vocab_size, size=(mask10.sum(),)
     )
     input_ids[mask_positions[mask10]] = random_tokens
 
-    # (3) 10% -> keep unchanged (do nothing)
+    # 10% -> keep unchanged (do nothing)
 
     # 5) Only compute loss on masked positions
     labels[:] = -100
@@ -151,19 +118,26 @@ def static_masking(example, mlm_prob=0.15):
     return {"input_ids": input_ids.tolist(), "labels": labels.tolist()}
 
 
-def prepare_tokenized_static():
-    dataset = load_dataset_demo()
+def prepare_tokenized_static_with_config(config: StaticMaskingConfig, tokenizer: BertTokenizerFast):
+    dataset = preprocess_dataset(config)
 
-    tokenized = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    tokenized = dataset.map(
+        lambda examples: tokenize_fn(examples, config, tokenizer),
+        batched=True,
+        remove_columns=["text"],
+    )
     # filter sequences that are basically only CLS/SEP/PAD
     tokenized = tokenized.filter(lambda ex: sum(ex["attention_mask"]) > 2)
 
     # static masking
-    tokenized_static = tokenized.map(static_masking, load_from_cache_file=False)
+    tokenized_static = tokenized.map(
+        lambda example: static_masking(example, tokenizer),
+        load_from_cache_file=False,
+    )
     return tokenized_static
 
 
-def get_training_args(output_dir, seed):
+def get_training_args(config: StaticMaskingConfig, output_dir, seed):
     """
     We reduce both train and evaluation batch size to 8 to make the MLM pretraining more stable and efficient on Apple MPS, 
     which does not provide the same level of optimization as CUDA GPUs.
@@ -171,27 +145,22 @@ def get_training_args(output_dir, seed):
     return TrainingArguments(
         output_dir=output_dir,
 
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=GRAD_ACC_STEPS,
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
+        gradient_accumulation_steps=config.grad_acc_steps,
 
-        # —— 控制训练长度 ——
-        max_steps=MAX_STEPS,
-        learning_rate=LR,
-        warmup_steps=WARMUP_STEPS,    
+        max_steps=config.max_steps,
+        learning_rate=config.lr,
+        warmup_steps=config.warmup_steps,    
 
-        # —— Evaluation 设置 ——
         eval_strategy="steps",
-        eval_steps=EVAL_STEPS,
+        eval_steps=config.eval_steps,
 
-        # —— Logging（记录训练 loss） ——
         logging_strategy="steps",      
-        logging_steps=LOGGING_STEPS,
+        logging_steps=config.logging_steps,
 
-        # —— Checkpoint（关闭省空间） ——
         save_strategy="no", 
 
-        # —— 其他设置 ——
         fp16=True,
         report_to="none",
         seed=seed
@@ -222,13 +191,13 @@ class LossRecorder(TrainerCallback):
         return pd.DataFrame(self.logs)
 
 
-def run_and_get_losses(seed, train_dataset ,eval_dataset):
+def run_and_get_losses(config: StaticMaskingConfig, tokenizer: BertTokenizerFast, seed, train_dataset, eval_dataset):
     """
     Run training for one seed
     """
-    model = BertForMaskedLM.from_pretrained(MODEL_NAME)
+    model = BertForMaskedLM.from_pretrained(config.model_name)
     loss_recorder = LossRecorder()
-    args = get_training_args(output_dir=f"{RESULT_DIR}/static_{seed}", seed=seed)
+    args = get_training_args(config, output_dir=f"{config.result_dir}/static_{seed}", seed=seed)
 
     trainer = Trainer(
         model=model,
@@ -240,14 +209,14 @@ def run_and_get_losses(seed, train_dataset ,eval_dataset):
     trainer.train()
 
     df = loss_recorder.to_dataframe()
-    file_name = f"{RESULT_DIR}/static_loss_seed_{seed}.csv"
+    file_name = f"{config.result_dir}/static_loss_seed_{seed}.csv"
     df.to_csv(file_name, index=False)
     print(f"\n[Static] Running seed={seed}: Saved to {file_name}")
 
     df["seed"] = seed
     return df
 
-def plot_static_loss(all_losses: pd.DataFrame):
+def plot_static_loss(config: StaticMaskingConfig, all_losses: pd.DataFrame):
     """
     collums in all_losses:
       - step
@@ -258,7 +227,7 @@ def plot_static_loss(all_losses: pd.DataFrame):
 
     # plot train loss
     plt.figure()
-    for seed in SEEDS:
+    for seed in config.seeds:
         df_seed_train = all_losses[
             (all_losses["seed"] == seed) & (all_losses["type"] == "train")
         ]
@@ -276,12 +245,12 @@ def plot_static_loss(all_losses: pd.DataFrame):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{RESULT_DIR}/static_train_loss_multi_seeds.png")
+    plt.savefig(f"{config.result_dir}/static_train_loss_multi_seeds.png")
     plt.close()
 
     # plot eval loss
     plt.figure()
-    for seed in SEEDS:
+    for seed in config.seeds:
         df_seed_eval = all_losses[
             (all_losses["seed"] == seed) & (all_losses["type"] == "eval")
         ]
@@ -299,19 +268,29 @@ def plot_static_loss(all_losses: pd.DataFrame):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{RESULT_DIR}/static_eval_loss_multi_seeds.png")
+    plt.savefig(f"{config.result_dir}/static_eval_loss_multi_seeds.png")
     plt.close()
 
 
 def main():
-    # data prepare
-    tokenized_static = prepare_tokenized_static()
-    all_losses = []
+    print("Using device:", "cuda" if torch.cuda.is_available() else "cpu or MPS")
 
-    for seed in SEEDS:
+    # Initialize config
+    config = load_static_config()
+    
+    # Initialize tokenizer
+    tokenizer = BertTokenizerFast.from_pretrained(config.model_name)
+
+    # data prepare
+    tokenized_static = prepare_tokenized_static_with_config(config, tokenizer)
+    
+    all_losses = []
+    for seed in config.seeds:
         # Run training and save losses
         print(f"\n START: [Static] Running seed={seed}")
         loss_static = run_and_get_losses(
+            config,
+            tokenizer,
             seed,
             tokenized_static["train"],
             tokenized_static["validation"],
@@ -320,9 +299,9 @@ def main():
         print(f"\n FINISH: [Static] Running seed={seed}")
     
     all_losses_df = pd.concat(all_losses, ignore_index=True)
-    all_losses_df.to_csv(f"{RESULT_DIR}/static_loss_all_seeds.csv", index=False)
+    all_losses_df.to_csv(f"{config.result_dir}/static_loss_all_seeds.csv", index=False)
 
-    plot_static_loss(all_losses_df)
+    plot_static_loss(config, all_losses_df)
 
 
 if __name__ == "__main__":

@@ -11,35 +11,10 @@ import random
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from datetime import datetime
-
-"""
-Config
-"""
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-RESULT_DIR = "./result-nsp-" + timestamp
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-MODEL_NAME = "bert-base-uncased"
-# MODEL_NAME = "prajjwal1/bert-small"
-DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
-TRAIN_SAMPLE_SIZE = None
-VALID_SAMPLE_SIZE = 50000
-# TRAIN_SAMPLE_SIZE = 100000
-# VALID_SAMPLE_SIZE = 20000
-MAX_LENGTH = 64
-
-BATCH_SIZE = 8
-MAX_STEPS = 3000
-LR = 5e-5
-WARMUP_STEPS = 100
-EVAL_STEPS = 100
-LOGGING_STEPS = 10
-
-SEEDS = [42, 43, 44]
+from config import NSPConfig, load_nsp_config
 
 
-def load_wikitext_pairs(train_sample_size=None, seed=42):
+def load_wikitext_pairs(config: NSPConfig, train_sample_size=None, seed=42):
     """Construct NSP training/validation sentence pairs from wikitext-103-raw-v1.
 
     - Positive examples: (sent[i], sent[i + 1]), label = 0
@@ -48,7 +23,7 @@ def load_wikitext_pairs(train_sample_size=None, seed=42):
     Note: use the given seed to fix Python's random state for reproducibility.
     """
     random.seed(seed)
-    original = load_dataset(*DATASET_NAME)
+    original = load_dataset(*config.dataset_name)
 
     def collect_sentences(split):
         # Filter out empty lines or lines that contain only whitespace
@@ -96,29 +71,24 @@ def load_wikitext_pairs(train_sample_size=None, seed=42):
             }
         )
 
-    train_pairs = make_nsp_pairs(train_sents)
-    valid_pairs = make_nsp_pairs(valid_sents, max_pairs=VALID_SAMPLE_SIZE)  # Validation set does not need to be very large
+    train_pairs = make_nsp_pairs(train_sents, max_pairs=train_sample_size)
+    valid_pairs = make_nsp_pairs(valid_sents, max_pairs=config.valid_sample_size)  # Validation set does not need to be very large
 
     dataset = DatasetDict({"train": train_pairs, "validation": valid_pairs})
     return dataset
 
-
-# Tokenizer 
-tokenizer = BertTokenizerFast.from_pretrained(MODEL_NAME)
-
-
-def tokenize_pair(examples):
+def tokenize_pair(examples, tokenizer: BertTokenizerFast, config: NSPConfig):
     """Encode (sentence_a, sentence_b) into input_ids, token_type_ids and attention_mask."""
     return tokenizer(
         examples["sentence_a"],
         examples["sentence_b"],
         truncation=True,
         padding="max_length",
-        max_length=MAX_LENGTH,
+        max_length=config.max_length,
     )
 
 
-def static_masking(example, mlm_prob=0.15):
+def static_masking(example, tokenizer: BertTokenizerFast, mlm_prob=0.15):
     """Static masking for the BERT NSP setting.
 
     - Apply BERT-style MLM on input_ids:
@@ -211,7 +181,7 @@ class LossRecorder(TrainerCallback):
         return pd.DataFrame(self.logs)
 
 
-def run_for_seed(seed: int) -> pd.DataFrame:
+def run_for_seed(config: NSPConfig, tokenizer: BertTokenizerFast, seed: int) -> pd.DataFrame:
     """Run training for a single random seed."""
     print(f"\n========== START: Running NSP baseline with SEED = {seed} ==========\n")
 
@@ -221,34 +191,35 @@ def run_for_seed(seed: int) -> pd.DataFrame:
 
     # 1) Construct NSP dataset
     dataset = load_wikitext_pairs(
-        train_sample_size=TRAIN_SAMPLE_SIZE,
+        config=config,
+        train_sample_size=config.train_sample_size,
         seed=seed,
     )
 
     # 2) Tokenize sentence pairs
-    tokenized = dataset.map(tokenize_pair, batched=True)
+    tokenized = dataset.map(lambda examples: tokenize_pair(examples, tokenizer, config), batched=True)
     # tokenized = dataset.map(tokenize_pair, batched=True, num_proc=12, batch_size=4000)
     tokenized = tokenized.remove_columns(["sentence_a", "sentence_b"])
 
     # 3) Apply static masking (MLM)
-    tokenized_static = tokenized.map(static_masking)
+    tokenized_static = tokenized.map(lambda example: static_masking(example, tokenizer))
 
     # 4) Set up TrainingArguments
     args = TrainingArguments(
-        output_dir=f"{RESULT_DIR}/bert_nsp_seed_{seed}",
+        output_dir=f"{config.result_dir}/bert_nsp_seed_{seed}",
 
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
 
-        max_steps=MAX_STEPS,
-        learning_rate=LR,
-        warmup_steps=WARMUP_STEPS,
+        max_steps=config.max_steps,
+        learning_rate=config.lr,
+        warmup_steps=config.warmup_steps,
 
         eval_strategy="steps",
-        eval_steps=EVAL_STEPS,
+        eval_steps=config.eval_steps,
 
         logging_strategy="steps",
-        logging_steps=LOGGING_STEPS,
+        logging_steps=config.logging_steps,
 
         save_strategy="no",
 
@@ -258,7 +229,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
     )
 
     # 5) Model + Trainer
-    model = BertForPreTraining.from_pretrained(MODEL_NAME)
+    model = BertForPreTraining.from_pretrained(config.model_name)
     loss_recorder = LossRecorder()
 
     trainer = Trainer(
@@ -274,7 +245,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
     df = loss_recorder.to_dataframe()
     df["seed"] = seed
     # Save a separate CSV for each seed
-    per_seed_csv = os.path.join(RESULT_DIR, f"nsp_baseline_loss_seed{seed}.csv")
+    per_seed_csv = os.path.join(config.result_dir, f"nsp_baseline_loss_seed{seed}.csv")
     df.to_csv(per_seed_csv, index=False)
     print(f"Saved per-seed loss to: {per_seed_csv}")
     print(f"\n========== FINISH! Running NSP baseline with SEED = {seed} ==========\n")
@@ -282,7 +253,7 @@ def run_for_seed(seed: int) -> pd.DataFrame:
     return df
 
 
-def plot_static_loss(all_losses: pd.DataFrame):
+def plot_static_loss(config: NSPConfig, all_losses: pd.DataFrame):
     """Columns in all_losses:
 
     - step
@@ -293,7 +264,7 @@ def plot_static_loss(all_losses: pd.DataFrame):
 
     # plot train loss
     plt.figure()
-    for seed in SEEDS:
+    for seed in config.seeds:
         df_seed_train = all_losses[
             (all_losses["seed"] == seed) & (all_losses["type"] == "train")
         ]
@@ -311,12 +282,12 @@ def plot_static_loss(all_losses: pd.DataFrame):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{RESULT_DIR}/nsp_baseline_train_loss_multi_seeds.png")
+    plt.savefig(f"{config.result_dir}/nsp_baseline_train_loss_multi_seeds.png")
     plt.close()
 
     # plot eval loss
     plt.figure()
-    for seed in SEEDS:
+    for seed in config.seeds:
         df_seed_eval = all_losses[
             (all_losses["seed"] == seed) & (all_losses["type"] == "eval")
         ]
@@ -334,22 +305,29 @@ def plot_static_loss(all_losses: pd.DataFrame):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{RESULT_DIR}/nsp_baseline_eval_loss_multi_seeds.png")
+    plt.savefig(f"{config.result_dir}/nsp_baseline_eval_loss_multi_seeds.png")
     plt.close()
 
 def main():
     print("Using device:", "cuda" if torch.cuda.is_available() else "cpu or MPS")
+
+    # Initialize config
+    config = load_nsp_config()
+
+    # Tokenizer
+    tokenizer = BertTokenizerFast.from_pretrained(config.model_name)
+
     all_dfs = []
-    for seed in SEEDS:
-        df = run_for_seed(seed)
+    for seed in config.seeds:
+        df = run_for_seed(config, tokenizer, seed)
         all_dfs.append(df)
 
     all_df = pd.concat(all_dfs, ignore_index=True)
-    all_path = os.path.join(RESULT_DIR, "nsp_baseline_loss_all_seeds.csv")
+    all_path = os.path.join(config.result_dir, "nsp_baseline_loss_all_seeds.csv")
     all_df.to_csv(all_path, index=False)
     print(f"\nSaved combined multi-seed loss to: {all_path}\n")
 
-    plot_static_loss(all_df)
+    plot_static_loss(config, all_df)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,21 @@
+output:
+  base_dir: "./result-nsp"
+
+model:
+  name: "bert-base-uncased"  # or "prajjwal1/bert-small"
+
+dataset:
+  name: "wikitext"
+  config: "wikitext-103-raw-v1"
+  train_sample_size: null
+  valid_sample_size: 50000
+  max_length: 64
+
+training:
+  batch_size: 8
+  max_steps: 3000
+  lr: 5.0e-5
+  warmup_steps: 100
+  eval_steps: 100
+  logging_steps: 10
+  seeds: [42, 43, 44]

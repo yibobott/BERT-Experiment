@@ -1,0 +1,22 @@
+output:
+  base_dir: "./result"
+  sub_dir: "static"
+
+model:
+  name: "bert-base-uncased"  # or "prajjwal1/bert-small"
+
+dataset:
+  name: "wikitext"
+  config: "wikitext-103-raw-v1"
+  train_sample_size: null  # or 100000
+  max_length: 64
+
+training:
+  batch_size: 16
+  max_steps: 50000
+  grad_acc_steps: 2
+  lr: 5.0e-5
+  warmup_steps: 1000
+  eval_steps: 500
+  logging_steps: 50
+  seeds: [42, 43, 44]

@@ -6,17 +6,17 @@
 pip install -r requirements.txt
 
 # MLM
-python dynamic-masking.py
-python static-masking.py
+python static-masking.py --config configs/static.yaml
+python dynamic-masking.py --config configs/dynamic.yaml
 
 # NSP
-python nsp.py
+python nsp.py --config configs/nsp.yaml
+
+# replace LayerNorm with RMSNorm
+python rmsnorm/train_rmsnorm.py --config configs/rmsnorm_postln_dynamic.yaml
 
 # analyse 
 python analyse.py
-
-# replace LayerNorm with RMSNorm
-python -m rmsnorm.train_rmsnorm
 
 # analyse
 python rmsnorm/analyse_rmsnorm_vs_postln.py

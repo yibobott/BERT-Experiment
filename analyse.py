@@ -46,9 +46,7 @@ def curve_mean_std(df, loss_type="eval"):
     Return mean and std of loss curve
     """
     sub = df[df["type"] == loss_type].copy()
-    # 把数据 reshape 成 (step × seed) 的矩阵
     pivot = sub.pivot_table(index="step", columns="seed", values="loss")
-    # 在同一行上聚合: 对同一个 step、跨不同 seed 的 loss 求平均和标准差
     mean = pivot.mean(axis=1)
     std = pivot.std(axis=1, ddof=1)
     return mean, std

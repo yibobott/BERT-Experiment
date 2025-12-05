@@ -12,48 +12,16 @@ import random
 import numpy as np
 import os
 import pandas as pd
-from datetime import datetime
+from config import RMSNormConfig, load_rmsnorm_config
 
 from rmsnorm.rmsnorm_utils import RMSNormBertForMaskedLM
 
-"""
-Config
-"""
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-# NORM_TYPE = "rmsnorm"
-NORM_TYPE = "postln"
+def preprocess_dataset(config: RMSNormConfig):
+    original_dataset = load_dataset(*config.dataset_name)
 
-# MASKING_TYPE = "static"
-MASKING_TYPE = "dynamic"
-
-RESULT_DIR = f"./result-rmsnorm-{timestamp}-{NORM_TYPE}-{MASKING_TYPE}"
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-MODEL_NAME = "bert-large-uncased"
-# MODEL_NAME = "bert-base-uncased"
-# MODEL_NAME = "prajjwal1/bert-small"
-
-DATASET_NAME = ("wikitext", "wikitext-103-raw-v1")
-TRAIN_SAMPLE_SIZE = None
-# TRAIN_SAMPLE_SIZE = 100000
-MAX_LENGTH = 64
-
-BATCH_SIZE = 8
-MAX_STEPS = 3000
-LR = 5e-5
-WARMUP_STEPS = 100
-EVAL_STEPS = 100
-LOGGING_STEPS = 10
-
-SEEDS = [42, 43, 44]
-
-
-def load_dataset_demo():
-    original_dataset = load_dataset(*DATASET_NAME)
-
-    if TRAIN_SAMPLE_SIZE is not None:
-        train = original_dataset["train"].shuffle(seed=42).select(range(TRAIN_SAMPLE_SIZE))
+    if config.train_sample_size is not None:
+        train = original_dataset["train"].shuffle(seed=42).select(range(config.train_sample_size))
     else:
         train = original_dataset["train"]
     train = train.filter(lambda x: x["text"] and len(x["text"].strip()) > 0)
@@ -64,18 +32,16 @@ def load_dataset_demo():
     return DatasetDict({"train": train, "validation": validation})
 
 
-tokenizer = BertTokenizerFast.from_pretrained(MODEL_NAME)
-
-def tokenize_fn(examples):
+def tokenize_fn(examples, config: RMSNormConfig, tokenizer: BertTokenizerFast):
     return tokenizer(
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=MAX_LENGTH
+        max_length=config.max_length
     )
 
 
-def static_masking(example, mlm_prob=0.15):
+def static_masking(example, tokenizer: BertTokenizerFast, mlm_prob=0.15):
     """One-shot static masking, same logic as in static-masking.py.
 
     Perform static masking once during dataset construction, and compute MLM
@@ -113,17 +79,25 @@ def static_masking(example, mlm_prob=0.15):
     return {"input_ids": input_ids.tolist(), "labels": labels.tolist()}
 
 
-def prepare_static_dataset():
-    dataset = load_dataset_demo()
-    tokenized = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+def prepare_static_dataset(config: RMSNormConfig, tokenizer: BertTokenizerFast):
+    dataset = preprocess_dataset(config)
+    tokenized = dataset.map(
+        lambda examples: tokenize_fn(examples, config, tokenizer),
+        batched=True,
+        remove_columns=["text"],
+    )
     tokenized = tokenized.filter(lambda ex: sum(ex["attention_mask"]) > 2)
-    static_ds = tokenized.map(static_masking, load_from_cache_file=False)
+    static_ds = tokenized.map(lambda example: static_masking(example, tokenizer), load_from_cache_file=False)
     return static_ds
 
 
-def prepare_dynamic_dataset():
-    dataset = load_dataset_demo()
-    tokenized = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+def prepare_dynamic_dataset(config: RMSNormConfig, tokenizer: BertTokenizerFast):
+    dataset = preprocess_dataset(config)
+    tokenized = dataset.map(
+        lambda examples: tokenize_fn(examples, config, tokenizer),
+        batched=True,
+        remove_columns=["text"],
+    )
     tokenized = tokenized.filter(lambda ex: sum(ex["attention_mask"]) > 2)
     return tokenized
 
@@ -152,18 +126,18 @@ class LossRecorder(TrainerCallback):
         return pd.DataFrame(self.logs)
 
 
-def get_training_args(output_dir, seed):
+def get_training_args(config: RMSNormConfig, output_dir, seed):
     return TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
-        max_steps=MAX_STEPS,
-        learning_rate=LR,
-        warmup_steps=WARMUP_STEPS,
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
+        max_steps=config.max_steps,
+        learning_rate=config.lr,
+        warmup_steps=config.warmup_steps,
         eval_strategy="steps",
-        eval_steps=EVAL_STEPS,
+        eval_steps=config.eval_steps,
         logging_strategy="steps",
-        logging_steps=LOGGING_STEPS,
+        logging_steps=config.logging_steps,
         save_strategy="no",
         fp16=False,
         report_to="none",
@@ -171,7 +145,7 @@ def get_training_args(output_dir, seed):
     )
 
 
-def build_model(norm_type: str):
+def build_model(config: RMSNormConfig):
     """Build a BERT-MLM model under different normalization schemes.
 
     norm_type:
@@ -182,13 +156,14 @@ def build_model(norm_type: str):
     checkpoint) to ensure a fair comparison of architectures.
     """
     from transformers import BertConfig
-    config = BertConfig.from_pretrained(MODEL_NAME)
-    if norm_type == "postln":
-        model = BertForMaskedLM(config)
-    elif norm_type == "rmsnorm":
-        model = RMSNormBertForMaskedLM(config)
+    from transformers import BertConfig
+    bert_config = BertConfig.from_pretrained(config.model_name)
+    if config.norm_type == "postln":
+        model = BertForMaskedLM(bert_config)
+    elif config.norm_type == "rmsnorm":
+        model = RMSNormBertForMaskedLM(bert_config)
     else:
-        raise ValueError(f"Unknown norm_type={norm_type}")
+        raise ValueError(f"Unknown norm_type={config.norm_type}")
     return model
 
 def assert_no_layernorm(model):
@@ -216,14 +191,22 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 def main():
+    print("Using device:", "cuda" if torch.cuda.is_available() else "cpu or MPS")
+
+    # Initialize config
+    config = load_rmsnorm_config()
+
+    # Prepare tokenizer
+    tokenizer = BertTokenizerFast.from_pretrained(config.model_name)
+
     # Prepare datasets
-    if MASKING_TYPE == "static":
-        dataset = prepare_static_dataset()
+    if config.masking_type == "static":
+        dataset = prepare_static_dataset(config, tokenizer)
         train_ds = dataset["train"]
         eval_ds = dataset["validation"]
         data_collator = None  # labels have already been constructed in the dataset
     else:
-        dataset = prepare_dynamic_dataset()
+        dataset = prepare_dynamic_dataset(config, tokenizer)
         train_ds = dataset["train"]
         eval_ds = dataset["validation"]
         data_collator = DataCollatorForLanguageModeling(
@@ -234,18 +217,19 @@ def main():
 
     all_losses = []
 
-    for seed in SEEDS:
-        print(f"\n==== Start training: norm={NORM_TYPE}, masking={MASKING_TYPE}, seed={seed} ====")
+    for seed in config.seeds:
+        print(f"\n==== Start training: norm={config.norm_type}, masking={config.masking_type}, seed={seed} ====")
         set_seed(seed)
 
-        model = build_model(NORM_TYPE)
+        model = build_model(config)
         # Check if all LayerNorm are replaced
-        if NORM_TYPE == "rmsnorm":
+        if config.norm_type == "rmsnorm":
             assert_no_layernorm(model)
 
         loss_recorder = LossRecorder()
         args = get_training_args(
-            output_dir=f"{RESULT_DIR}/{NORM_TYPE}_{MASKING_TYPE}_seed_{seed}",
+            config,
+            output_dir=f"{config.result_dir}/{config.norm_type}_{config.masking_type}_seed_{seed}",
             seed=seed,
         )
 
@@ -261,13 +245,13 @@ def main():
 
         df = loss_recorder.to_dataframe()
         df["seed"] = seed
-        csv_path = f"{RESULT_DIR}/{NORM_TYPE}_{MASKING_TYPE}_loss_seed_{seed}.csv"
+        csv_path = f"{config.result_dir}/{config.norm_type}_{config.masking_type}_loss_seed_{seed}.csv"
         df.to_csv(csv_path, index=False)
         print(f"[Saved] {csv_path}")
         all_losses.append(df)
 
     all_df = pd.concat(all_losses, ignore_index=True)
-    all_csv = f"{RESULT_DIR}/{NORM_TYPE}_{MASKING_TYPE}_loss_all_seeds.csv"
+    all_csv = f"{config.result_dir}/{config.norm_type}_{config.masking_type}_loss_all_seeds.csv"
     all_df.to_csv(all_csv, index=False)
     print(f"[Saved all seeds] {all_csv}")
 
