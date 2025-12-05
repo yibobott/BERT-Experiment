@@ -10,12 +10,8 @@ from transformers import TrainerCallback
 import torch
 import random
 import numpy as np
-import os
-import pandas as pd
-from config import RMSNormConfig, load_rmsnorm_config
-
-from rmsnorm.rmsnorm_utils import RMSNormBertForMaskedLM
-
+from config import RMSNormConfig, load_normalization_config
+from normalization.rmsnorm_utils import RMSNormBertForMaskedLM
 
 def preprocess_dataset(config: RMSNormConfig):
     original_dataset = load_dataset(*config.dataset_name)
@@ -194,7 +190,7 @@ def main():
     print("Using device:", "cuda" if torch.cuda.is_available() else "cpu or MPS")
 
     # Initialize config
-    config = load_rmsnorm_config()
+    config = load_normalization_config()
 
     # Prepare tokenizer
     tokenizer = BertTokenizerFast.from_pretrained(config.model_name)

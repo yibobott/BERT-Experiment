@@ -1,5 +1,5 @@
 output:
-  base_dir: "./result"
+  base_dir: "./result-mlm"
   sub_dir: "static"
 
 model:

@@ -3,7 +3,8 @@ experiment:
   masking_type: "dynamic"  # "static" or "dynamic"
 
 output:
-  base_dir: "./result-rmsnorm"
+  base_dir: "./result-normalization"
+  sub_dir: "{norm_type}-{masking_type}"
 
 model:
   name: "bert-large-uncased"  # or "bert-base-uncased", "prajjwal1/bert-small"

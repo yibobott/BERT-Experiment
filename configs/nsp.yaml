@@ -1,5 +1,6 @@
 output:
   base_dir: "./result-nsp"
+  sub_dir: "nsp"
 
 model:
   name: "bert-base-uncased"  # or "prajjwal1/bert-small"

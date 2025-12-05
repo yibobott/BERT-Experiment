@@ -155,7 +155,8 @@ def load_nsp_config() -> NSPConfig:
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     _base_dir = cfg["output"]["base_dir"]
-    result_dir = os.path.join(_base_dir, timestamp)
+    _sub_dir = cfg["output"]["sub_dir"]
+    result_dir = os.path.join(_base_dir, timestamp, _sub_dir)
     os.makedirs(result_dir, exist_ok=True)
 
     model_name = cfg["model"]["name"]
@@ -214,7 +215,7 @@ class RMSNormConfig:
     seeds: list[int]
 
 
-def load_rmsnorm_config() -> RMSNormConfig:
+def load_normalization_config() -> RMSNormConfig:
     cfg = load_yaml_config()
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -223,7 +224,9 @@ def load_rmsnorm_config() -> RMSNormConfig:
     masking_type = cfg["experiment"]["masking_type"]
 
     _base_dir = cfg["output"]["base_dir"]
-    result_dir = os.path.join(_base_dir, f"{timestamp}-{norm_type}-{masking_type}")
+    sub_dir_tpl = cfg["output"]["sub_dir"]
+    _sub_dir = sub_dir_tpl.format(norm_type=norm_type, masking_type=masking_type)
+    result_dir = os.path.join(_base_dir, timestamp, _sub_dir)
     os.makedirs(result_dir, exist_ok=True)
 
     model_name = cfg["model"]["name"]

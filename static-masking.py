@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 import random
-import os
 from datasets import DatasetDict
 from config import StaticMaskingConfig, load_static_config
 

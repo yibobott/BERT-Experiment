@@ -7,19 +7,23 @@ pip install -r requirements.txt
 
 # MLM
 python static-masking.py --config configs/static.yaml
+# result_dir example: ./result-mlm/20251205-151603/static
 python dynamic-masking.py --config configs/dynamic.yaml
+# result_dir example: ./result-mlm/20251205-152207/dynamic
 
 # NSP
 python nsp.py --config configs/nsp.yaml
+# result_dir example: ./result-nsp/20251205-153055/nsp
 
 # replace LayerNorm with RMSNorm
-python rmsnorm/train_rmsnorm.py --config configs/rmsnorm_postln_dynamic.yaml
+python -m normalization.normalize --config configs/normalization.yaml
+# result_dir example: ./result-normalization/20251205-160341/postln-dynamic
 
 # analyse 
 python analyse.py
 
 # analyse
-python rmsnorm/analyse_rmsnorm_vs_postln.py
+python normalization/analyse_rmsnorm_vs_postln.py
 
 ```
 
